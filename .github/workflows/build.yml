@@ -1,120 +1,237 @@
 name: Test for build scripts
 on:
-  push: # ci work when pushing master branch
+  push:
     branches:
-      - master
-    paths:
-      - "scripts/install_deepchem_conda.ps1"
-      - "scripts/install_deepchem_conda.sh"
-      - "requirements/**"
-  pull_request: # ci work when creating a PR to master branch
-    branches:
-      - master
-    paths:
-      - "scripts/install_deepchem_conda.ps1"
-      - "scripts/install_deepchem_conda.sh"
-      - "requirements/**"
+      - main
+
 jobs:
   bash-build:
     runs-on: ${{ matrix.os }}
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - if: runner.os == 'ubuntu-latest'
+        name: Maximize build space
+        run: 'sudo rm -rf /usr/share/dotnet
+
+          sudo rm -rf /opt/ghc
+
+          sudo rm -rf "/usr/local/share/boost"
+
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+          sudo rm -rf /usr/local/lib/android
+
+          sudo docker image prune --all --force
+
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          '
+      - id: measurement-2
+        name: Record Measurement After Maximize build space
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Maximize build space
+          task: get-measurement
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        name: Cache pip modules for Linux
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**') }}
+          path: ~/.cache/pip
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - if: runner.os == 'macOS'
+        name: Cache pip modules for MacOS
+        uses: actions/cache@v4
+        with:
+          key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**') }}
+          path: ~/Library/Caches/pip
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          miniconda-version: latest
+          python-version: ${{ matrix.python-version }}
+      - if: ${{ runner.os == 'macOS' && runner.arch == 'ARM64' }}
+        name: Install libomp with Homebrew
+        run: 'brew install libomp
+
+          '
+      - id: measurement-8
+        name: Record Measurement After Install libomp with Homebrew
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install libomp with Homebrew
+          task: get-measurement
+      - continue-on-error: true
+        name: Install dependencies (failure check)
+        run: 'source scripts/install_deepchem_conda.sh
+
+          '
+        shell: bash -l {0}
+      - id: measurement-10
+        name: Record Measurement After Install dependencies (failure check)
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install dependencies (failure check)
+          task: get-measurement
+      - name: Install all dependencies
+        run: 'source scripts/install_deepchem_conda.sh ${{ matrix.python-version }}
+          cpu
+
+          '
+        shell: bash -l {0}
+      - id: measurement-12
+        name: Record Measurement After Install all dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install all dependencies
+          task: get-measurement
+      - name: Import Checks
+        run: 'conda activate deepchem
+
+          python -V
+
+          python -c ''import deepchem; print("DeepChem version %s" % deepchem.__version__)''
+
+          python -c ''import rdkit; print("RDKIT version %s" % rdkit.__version__)''
+
+          python -c ''import torch; print("Torch version %s" % torch.__version__)''
+
+          python -c ''import tensorflow; print("Tensorflow version %s" % tensorflow.__version__)''
+
+          python -c ''import jax; print ("Jax version %s" % jax.__version__)''
+
+          '
+        shell: bash -l {0}
+      - id: measurement-14
+        name: Record Measurement After Import Checks
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Import Checks
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is for apple silicon
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.9', '3.11']
-    steps:
-    - name: Maximize build space
-      if: runner.os == 'ubuntu-latest'
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo rm -rf /usr/local/lib/android
-        sudo docker image prune --all --force
-        sudo rm -rf /opt/hostedtoolcache/CodeQL
-        sudo rm -rf /opt/hostedtoolcache/CodeQL
-    - uses: actions/checkout@v4
-    - name: Cache pip modules for Linux
-      if: runner.os == 'Linux'
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Cache pip modules for MacOS
-      if: runner.os == 'macOS'
-      uses: actions/cache@v4
-      with:
-        path: ~/Library/Caches/pip
-        key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniconda-version: "latest"
-        auto-update-conda: true
-        python-version: ${{ matrix.python-version }}
-    - name: Install libomp with Homebrew
-      if: ${{ runner.os == 'macOS' && runner.arch == 'ARM64' }}
-      run: |
-        brew install libomp
-    - name: Install dependencies (failure check)
-      continue-on-error: true
-      shell: bash -l {0}
-      run: |
-        source scripts/install_deepchem_conda.sh
-    - name: Install all dependencies
-      shell: bash -l {0}
-      run: |
-        source scripts/install_deepchem_conda.sh ${{ matrix.python-version }} cpu
-    - name: Import Checks
-      shell: bash -l {0}
-      run: |
-        conda activate deepchem
-        python -V
-        python -c 'import deepchem; print("DeepChem version %s" % deepchem.__version__)'
-        python -c 'import rdkit; print("RDKIT version %s" % rdkit.__version__)'
-        python -c 'import torch; print("Torch version %s" % torch.__version__)'
-        python -c 'import tensorflow; print("Tensorflow version %s" % tensorflow.__version__)'
-        python -c 'import jax; print ("Jax version %s" % jax.__version__)'
-
+        os:
+          - ubuntu-latest
+          - macos-latest
+        python-version:
+          - '3.9'
+          - '3.11'
   powershell-build:
     runs-on: windows-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - name: Cache pip packages for Windows
+        uses: actions/cache@v4
+        with:
+          key: ${{ matrix.os }}-pip-${{ hashFiles('env.*.yml') }}
+          path: ~\AppData\Local\pip\Cache
+      - name: Install miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          miniconda-version: latest
+          python-version: ${{ matrix.python-version }}
+      - continue-on-error: true
+        name: Install dependencies (failure check)
+        run: '. .\scripts\install_deepchem_conda.ps1
+
+          '
+        shell: pwsh
+      - id: measurement-5
+        name: Record Measurement After Install dependencies (failure check)
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install dependencies (failure check)
+          task: get-measurement
+      - name: Install dependencies
+        run: '. .\scripts\install_deepchem_conda.ps1 ${{ matrix.python-version }}
+          cpu
+
+          '
+        shell: pwsh
+      - id: measurement-7
+        name: Record Measurement After Install dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install dependencies
+          task: get-measurement
+      - name: Import Checks
+        run: 'conda activate deepchem
+
+          python -V
+
+          python -c "import deepchem; print(''DeepChem version %s'' % deepchem.__version__)"
+
+          python -c "import rdkit; print(''RDKIT version %s'' % rdkit.__version__)"
+
+          python -c "import torch; print(''Torch version %s'' % torch.__version__)"
+
+          '
+        shell: pwsh
+      - id: measurement-9
+        name: Record Measurement After Import Checks
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Import Checks
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.11']
-    steps:
-    - uses: actions/checkout@v4
-    - name: Cache pip packages for Windows
-      uses: actions/cache@v4
-      with:
-        path: ~\AppData\Local\pip\Cache
-        key: ${{ matrix.os }}-pip-${{ hashFiles('env.*.yml') }}
-    - name: Install miniconda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniconda-version: "latest"
-        auto-update-conda: true
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies (failure check)
-      continue-on-error: true
-      shell: pwsh
-      run: |
-        . .\scripts\install_deepchem_conda.ps1
-    - name: Install dependencies
-      shell: pwsh
-      run: |
-        . .\scripts\install_deepchem_conda.ps1 ${{ matrix.python-version }} cpu
-    - name: Import Checks
-      shell: pwsh
-      run: |
-        conda activate deepchem
-        python -V
-        python -c "import deepchem; print('DeepChem version %s' % deepchem.__version__)"
-        python -c "import rdkit; print('RDKIT version %s' % rdkit.__version__)"
-        python -c "import torch; print('Torch version %s' % torch.__version__)"
+        python-version:
+          - '3.9'
+          - '3.11'

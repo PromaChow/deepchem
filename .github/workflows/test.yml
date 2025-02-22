@@ -1,201 +1,347 @@
 name: Unit Tests
 on:
-  push: # ci work when pushing master branch
+  push:
     branches:
-      - master
-  pull_request: # ci work when creating a PR to master branch
-    branches:
-      - master
+      - main
+
 jobs:
   core-build:
     runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.8', '3.10', '3.11']
-        include:
-          - os: windows-latest
-            python-version: '3.9'
     steps:
-    - name: Maximize build space
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo docker image prune --all --force
-        sudo rm -rf /opt/hostedtoolcache/CodeQL
-    - uses: actions/checkout@v4
-    - name: Cache pip modules for Linux
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Build DeepChem
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .
-    - name: Import checking
-      run: python -c "import deepchem"
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - if: matrix.os == 'ubuntu-latest'
+        name: Maximize build space
+        run: 'sudo rm -rf /usr/share/dotnet
 
-  unit-tests:
-    runs-on: ${{ matrix.os }}
+          sudo rm -rf /opt/ghc
+
+          sudo rm -rf "/usr/local/share/boost"
+
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+          sudo docker image prune --all --force
+
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          '
+      - id: measurement-2
+        name: Record Measurement After Maximize build space
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Maximize build space
+          task: get-measurement
+      - uses: actions/checkout@v4
+      - name: Cache pip modules for Linux
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**.yml') }}
+          path: ~/.cache/pip
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build DeepChem
+        run: 'python -m pip install --upgrade pip
+
+          pip install -e .
+
+          '
+      - id: measurement-7
+        name: Record Measurement After Build DeepChem
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Build DeepChem
+          task: get-measurement
+      - name: Import checking
+        run: python -c "import deepchem"
+      - id: measurement-9
+        name: Record Measurement After Import checking
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Import checking
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.8', '3.10', '3.11']
         include:
           - os: windows-latest
             python-version: '3.9'
+        os:
+          - ubuntu-latest
+        python-version:
+          - '3.8'
+          - '3.10'
+          - '3.11'
+  unit-tests:
     env:
       OS: ${{ matrix.os }}
       PYTHON_VERSION: ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     steps:
-    - name: Maximize build space
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo rm -rf /usr/local/lib/android
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    # https://github.com/galaxyproject/tools-iuc/blob/master/.github/workflows/pr.yaml
-    # The range of commits to check for changes is:
-    # - for events on the master branch we compare against the sha before the event
-    #   (note that this does not work for feature branch events since we want all
-    #   commits on the feature branch and not just the commits of the last event)
-    # - for pull requests we compare against the 1st ancestor, given the current
-    #   HEAD is the merge between the PR branch and the base branch
-    - name: Set commit range (push to the master branch, e.g. merge)
-      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-      run: echo "COMMIT_RANGE=${{ github.event.before }}.." >> $GITHUB_ENV
-    - name: Set commit range (pull request)
-      if: github.event_name == 'pull_request'
-      run: |
-        git fetch origin master
-        echo "COMMIT_RANGE=origin/master..." >> $GITHUB_ENV
-    - name: Cache pip packages for Linux
-      if: runner.os == 'Linux'
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Cache pip packages for MacOS
-      if: runner.os == 'macOS'
-      uses: actions/cache@v4
-      with:
-        path: ~/Library/Caches/pip
-        key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Cache pip packages for Windows
-      if: runner.os == 'Windows'
-      uses: actions/cache@v4
-      with:
-        path: ~\AppData\Local\pip\Cache
-        key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Create env.yml for python 3.11
-      shell: bash
-      if: ${{ matrix.python-version == '3.11' }}
-      run: |
-        python -m pip install --upgrade pip;
-        pip install conda-merge;
-        cd requirements
-        if [ "$(uname)" == 'Linux' ]; then
-          sudo apt-get update
-          sudo apt-get install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev libhdf5-dev
-          conda-merge env_common.yml env_test.yml env_ubuntu_3_11.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml jax/env_jax.cpu.yml >  env.yml
-        elif [  "$(uname)" == 'Darwin' ]; then
-          conda-merge env_common.yml env_test.yml env_mac_3_11.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml jax/env_jax.cpu.yml > env.yml
-        elif [[  "$(uname)" == "MINGW64_NT"* ]]; then
-          conda-merge env_common.yml env_test.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.win.cpu.yml > env.yml
-        fi;
-        cd ..
-        cp requirements/env.yml env.yml
-    - name: Create env.yml for python 3.8
-      shell: bash
-      # A special case of environment creation for python 3.8 which excludes jax
-      if: ${{ matrix.python-version == '3.8' }}
-      run: |
-        python -m pip install --upgrade pip;
-        pip install conda-merge;
-        cd requirements
-        if [ "$(uname)" == 'Linux' ]; then
-          sudo apt-get update
-          sudo apt-get install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev libhdf5-dev
-          conda-merge env_common_3_8.yml env_test.yml env_ubuntu.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml env_dqc.yml >  env.yml
-        elif [  "$(uname)" == 'Darwin' ]; then
-          conda-merge env_common_3_8.yml env_test.yml env_mac.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml > env.yml
-        elif [[  "$(uname)" == "MINGW64_NT"* ]]; then
-          conda-merge env_common_3_8.yml env_test.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.win.cpu.yml > env.yml
-        fi;
-        cd ..
-        cp requirements/env.yml env.yml
-    - name: Create env.yml for python >= 3.9
-      shell: bash
-      if: ${{ matrix.python-version != '3.8' && matrix.python-version != '3.11' }}
-      run: |
-        python -m pip install --upgrade pip;
-        pip install conda-merge;
-        cd requirements
-        if [ "$(uname)" == 'Linux' ]; then
-          sudo apt-get update
-          sudo apt-get install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev libhdf5-dev
-          conda-merge env_common.yml env_test.yml env_ubuntu.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml jax/env_jax.cpu.yml > env.yml
-        elif [  "$(uname)" == 'Darwin' ]; then
-          conda-merge env_common.yml env_test.yml env_mac.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml jax/env_jax.cpu.yml > env.yml
-        elif [[  "$(uname)" == "MINGW64_NT"* ]]; then
-          conda-merge env_common.yml env_test.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.win.cpu.yml > env.yml
-        fi;
-        cd ..
-        cp requirements/env.yml env.yml
-    - name: Install all dependencies
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniconda-version: "latest"
-        auto-update-conda: true
-        activate-environment: deepchem
-        channels: conda-forge,defaults
-        python-version: ${{ matrix.python-version }}
-        environment-file: env.yml
-    - name: Install DeepChem
-      id: install
-      shell: bash -l {0}
-      run: pip install -e .
-    - name: Doctest Linux
-      if: ${{ (runner.os == 'Linux') && always() }}
-      shell: bash -l {0}
-      run: DGLBACKEND=pytorch pytest -v --ignore-glob='deepchem/**/test*.py' --ignore-glob='deepchem/models/jax_models/*' --ignore-glob='deepchem/models/dft/*' --ignore='deepchem/utils/dftutils.py' --doctest-modules deepchem --doctest-continue-on-failure
-    - name: Doctest Windows
-      if: ${{ (runner.os == 'Windows') && always() }}
-      # Seperate test avoiding Jax in windows since Jax is not supported in Windows
-      shell: bash -l {0}
-      run: DGLBACKEND=pytorch pytest -v --ignore-glob='deepchem/**/test*.py' --ignore-glob='deepchem/models/jax_models/*' --doctest-modules deepchem --doctest-continue-on-failure
-    - name: PyTest
-      if: ${{ (success() || failure()) && (steps.install.outcome == 'failure' || steps.install.outcome == 'success') && matrix.python-version == '3.11'}}
-      shell: bash -l {0}
-      run: pytest -v -m "not jax and not torch and not tensorflow and not dqc" --ignore='deepchem/utils/test/test_sequence_utils.py' deepchem
-    - name: PyTest
-      if: ${{ (success() || failure()) && (steps.install.outcome == 'failure' || steps.install.outcome == 'success') && matrix.python-version != '3.11'}}
-      shell: bash -l {0}
-      run: pytest -v -m "not jax and not torch and not tensorflow and not dqc" deepchem
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
+      - if: matrix.os == 'ubuntu-latest'
+        name: Maximize build space
+        run: 'sudo rm -rf /usr/share/dotnet
+
+          sudo rm -rf /opt/ghc
+
+          sudo rm -rf "/usr/local/share/boost"
+
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+          sudo rm -rf /usr/local/lib/android
+
+          '
+      - id: measurement-2
+        name: Record Measurement After Maximize build space
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Maximize build space
+          task: get-measurement
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        name: Set commit range (push to the master branch, e.g. merge)
+        run: echo "COMMIT_RANGE=${{ github.event.before }}.." >> $GITHUB_ENV
+      - id: measurement-5
+        name: Record Measurement After Set commit range (push to the master branch,
+          e.g. merge)
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Set commit range (push to the master branch, e.g. merge)
+          task: get-measurement
+      - if: github.event_name == 'pull_request'
+        name: Set commit range (pull request)
+        run: 'git fetch origin master
+
+          echo "COMMIT_RANGE=origin/master..." >> $GITHUB_ENV
+
+          '
+      - id: measurement-7
+        name: Record Measurement After Set commit range (pull request)
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Set commit range (pull request)
+          task: get-measurement
+      - if: runner.os == 'Linux'
+        name: Cache pip packages for Linux
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements/**.yml') }}
+          path: ~/.cache/pip
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - if: runner.os == 'macOS'
+        name: Cache pip packages for MacOS
+        uses: actions/cache@v4
+        with:
+          key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**.yml') }}
+          path: ~/Library/Caches/pip
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - if: runner.os == 'Windows'
+        name: Cache pip packages for Windows
+        uses: actions/cache@v4
+        with:
+          key: ${{ matrix.os }}-pip-${{ hashFiles('requirements/**.yml') }}
+          path: ~\AppData\Local\pip\Cache
+          restore-keys: '${{ runner.os }}-pip-
+
+            '
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - if: ${{ matrix.python-version == '3.11' }}
+        name: Create env.yml for python 3.11
+        run: "python -m pip install --upgrade pip;\npip install conda-merge;\ncd requirements\n\
+          if [ \"$(uname)\" == 'Linux' ]; then\n  sudo apt-get update\n  sudo apt-get\
+          \ install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev\
+          \ libhdf5-dev\n  conda-merge env_common.yml env_test.yml env_ubuntu_3_11.yml\
+          \ tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml jax/env_jax.cpu.yml\
+          \ >  env.yml\nelif [  \"$(uname)\" == 'Darwin' ]; then\n  conda-merge env_common.yml\
+          \ env_test.yml env_mac_3_11.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml\
+          \ jax/env_jax.cpu.yml > env.yml\nelif [[  \"$(uname)\" == \"MINGW64_NT\"\
+          * ]]; then\n  conda-merge env_common.yml env_test.yml tensorflow/env_tensorflow.cpu.yml\
+          \ torch/env_torch.win.cpu.yml > env.yml\nfi;\ncd ..\ncp requirements/env.yml\
+          \ env.yml\n"
+        shell: bash
+      - id: measurement-13
+        name: Record Measurement After Create env.yml for python 3.11
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Create env.yml for python 3.11
+          task: get-measurement
+      - if: ${{ matrix.python-version == '3.8' }}
+        name: Create env.yml for python 3.8
+        run: "python -m pip install --upgrade pip;\npip install conda-merge;\ncd requirements\n\
+          if [ \"$(uname)\" == 'Linux' ]; then\n  sudo apt-get update\n  sudo apt-get\
+          \ install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev\
+          \ libhdf5-dev\n  conda-merge env_common_3_8.yml env_test.yml env_ubuntu.yml\
+          \ tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml env_dqc.yml\
+          \ >  env.yml\nelif [  \"$(uname)\" == 'Darwin' ]; then\n  conda-merge env_common_3_8.yml\
+          \ env_test.yml env_mac.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml\
+          \ > env.yml\nelif [[  \"$(uname)\" == \"MINGW64_NT\"* ]]; then\n  conda-merge\
+          \ env_common_3_8.yml env_test.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.win.cpu.yml\
+          \ > env.yml\nfi;\ncd ..\ncp requirements/env.yml env.yml\n"
+        shell: bash
+      - id: measurement-15
+        name: Record Measurement After Create env.yml for python 3.8
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Create env.yml for python 3.8
+          task: get-measurement
+      - if: ${{ matrix.python-version != '3.8' && matrix.python-version != '3.11'
+          }}
+        name: Create env.yml for python >= 3.9
+        run: "python -m pip install --upgrade pip;\npip install conda-merge;\ncd requirements\n\
+          if [ \"$(uname)\" == 'Linux' ]; then\n  sudo apt-get update\n  sudo apt-get\
+          \ install -y libopenblas-dev libatlas-base-dev libblas-dev liblapack-dev\
+          \ libhdf5-dev\n  conda-merge env_common.yml env_test.yml env_ubuntu.yml\
+          \ tensorflow/env_tensorflow.cpu.yml torch/env_torch.cpu.yml jax/env_jax.cpu.yml\
+          \ > env.yml\nelif [  \"$(uname)\" == 'Darwin' ]; then\n  conda-merge env_common.yml\
+          \ env_test.yml env_mac.yml tensorflow/env_tensorflow.cpu.yml torch/env_torch.mac.cpu.yml\
+          \ jax/env_jax.cpu.yml > env.yml\nelif [[  \"$(uname)\" == \"MINGW64_NT\"\
+          * ]]; then\n  conda-merge env_common.yml env_test.yml tensorflow/env_tensorflow.cpu.yml\
+          \ torch/env_torch.win.cpu.yml > env.yml\nfi;\ncd ..\ncp requirements/env.yml\
+          \ env.yml\n"
+        shell: bash
+      - id: measurement-17
+        name: Record Measurement After Create env.yml for python >= 3.9
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Create env.yml for python >= 3.9
+          task: get-measurement
+      - name: Install all dependencies
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: deepchem
+          auto-update-conda: true
+          channels: conda-forge,defaults
+          environment-file: env.yml
+          miniconda-version: latest
+          python-version: ${{ matrix.python-version }}
+      - id: install
+        name: Install DeepChem
+        run: pip install -e .
+        shell: bash -l {0}
+      - id: measurement-20
+        name: Record Measurement After Install DeepChem
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Install DeepChem
+          task: get-measurement
+      - if: ${{ (runner.os == 'Linux') && always() }}
+        name: Doctest Linux
+        run: DGLBACKEND=pytorch pytest -v --ignore-glob='deepchem/**/test*.py' --ignore-glob='deepchem/models/jax_models/*'
+          --ignore-glob='deepchem/models/dft/*' --ignore='deepchem/utils/dftutils.py'
+          --doctest-modules deepchem --doctest-continue-on-failure
+        shell: bash -l {0}
+      - id: measurement-22
+        name: Record Measurement After Doctest Linux
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Doctest Linux
+          task: get-measurement
+      - if: ${{ (runner.os == 'Windows') && always() }}
+        name: Doctest Windows
+        run: DGLBACKEND=pytorch pytest -v --ignore-glob='deepchem/**/test*.py' --ignore-glob='deepchem/models/jax_models/*'
+          --doctest-modules deepchem --doctest-continue-on-failure
+        shell: bash -l {0}
+      - id: measurement-24
+        name: Record Measurement After Doctest Windows
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: Doctest Windows
+          task: get-measurement
+      - if: ${{ (success() || failure()) && (steps.install.outcome == 'failure' ||
+          steps.install.outcome == 'success') && matrix.python-version == '3.11'}}
+        name: PyTest
+        run: pytest -v -m "not jax and not torch and not tensorflow and not dqc" --ignore='deepchem/utils/test/test_sequence_utils.py'
+          deepchem
+        shell: bash -l {0}
+      - id: measurement-26
+        name: Record Measurement After PyTest
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: PyTest
+          task: get-measurement
+      - if: ${{ (success() || failure()) && (steps.install.outcome == 'failure' ||
+          steps.install.outcome == 'success') && matrix.python-version != '3.11'}}
+        name: PyTest
+        run: pytest -v -m "not jax and not torch and not tensorflow and not dqc" deepchem
+        shell: bash -l {0}
+      - id: measurement-28
+        name: Record Measurement After PyTest
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          label: PyTest
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python-version: '3.9'
+        os:
+          - ubuntu-latest
+        python-version:
+          - '3.8'
+          - '3.10'
+          - '3.11'

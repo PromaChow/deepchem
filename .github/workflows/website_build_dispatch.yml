@@ -1,16 +1,35 @@
 name: Dispatch trigger for deepchem website re-build
 on:
-  push: # ci work when pushing to master branch
+  push:
     branches:
-      - master
+      - main
+
 jobs:
   website-rebuild-trigger-dispatch:
     runs-on: ubuntu-latest
     steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: start-measurement
       - name: Repository Dispatch
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.WEBSITE_REPO_PAT }}
-          repository: deepchem/deepchem.github.io
           event-type: rebuild-website
-           
+          repository: deepchem/deepchem.github.io
+          token: ${{ secrets.WEBSITE_REPO_PAT }}
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@v4
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption-${{
+          github.run_id }}.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption-${{ github.run_id }}.json
